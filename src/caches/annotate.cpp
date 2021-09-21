@@ -60,7 +60,7 @@ void annotate(const string &trace_file, const int &n_extra_fields) {
     // get nextSeen indices
     // assume id has same size
     unordered_map<uint64_t, uint32_t> last_seen;
-    for (i = n_req; i >= 0; --i) {
+    for (i = n_req - 1; i >= 0; --i) {
         uint64_t current_id = id_and_next_seq[i];
         auto lit = last_seen.find(current_id);
         if (lit != last_seen.end())
