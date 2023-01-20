@@ -1,0 +1,16 @@
+<component name="ArtifactManager">
+  <artifact type="jar" name="tinylfu:jar">
+    <output-path>$PROJECT_DIR$</output-path>
+    <root id="archive" name="tinylfu.jar">
+      <element id="directory" name="META-INF">
+        <element id="file-copy" path="$PROJECT_DIR$/src/main/java/META-INF/MANIFEST.MF" />
+      </element>
+      <element id="module-output" name="tinylfu.main" />
+      <element id="extracted-dir" path="$USER_HOME$/.gradle/caches/modules-2/files-2.1/com.github.ben-manes.caffeine/caffeine/2.7.0/c3af06be4a7d4e769fce2cef5e77d3becad9818a/caffeine-2.7.0.jar" path-in-jar="/" />
+      <element id="extracted-dir" path="$USER_HOME$/.gradle/caches/modules-2/files-2.1/io.dropwizard.metrics/metrics-core/4.0.2/ec9878842d510cabd6bd6a9da1bebae1ae0cd199/metrics-core-4.0.2.jar" path-in-jar="/" />
+      <element id="extracted-dir" path="$USER_HOME$/.gradle/caches/modules-2/files-2.1/org.checkerframework/checker-qual/2.6.0/64eebcbc8b291ca2d37d2dc29ddcba4eb5026d79/checker-qual-2.6.0.jar" path-in-jar="/" />
+      <element id="extracted-dir" path="$USER_HOME$/.gradle/caches/modules-2/files-2.1/org.slf4j/slf4j-api/1.7.25/da76ca59f6a57ee3102f8f9bd9cee742973efa8a/slf4j-api-1.7.25.jar" path-in-jar="/" />
+      <element id="extracted-dir" path="$USER_HOME$/.gradle/caches/modules-2/files-2.1/com.google.errorprone/error_prone_annotations/2.3.3/42aa5155a54a87d70af32d4b0d06bf43779de0e2/error_prone_annotations-2.3.3.jar" path-in-jar="/" />
+    </root>
+  </artifact>
+</component>
