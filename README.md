@@ -2,7 +2,7 @@
 
 ## A simulator for CDN caching and web caching policies.
 
-Simulate a variety of existing caching policies by replaying request traces, and use this framework as a basis to experiment with new ones. A 14-day long [Wikipedia trace](#trace) is released alongside the simulator.
+Simulate a variety of existing caching policies by replaying request traces, and use this framework as a basis to experiment with new ones. A 14-day long [Wikipedia trace](#traces) is released alongside the simulator.
 
 The webcachesim2 simulator was built to evaluate the Learning relaxed Belady algorithm (LRB), a new machine-learning-based caching algorithm. The simulator build on top of [webcachesim](https://github.com/dasebe/webcachesim), see [References](#references) for more information.
 
