@@ -11,6 +11,7 @@
 #include <vector>
 #include <bsoncxx/builder/basic/document.hpp>
 #include <unordered_set>
+#include <map>
 #include "cache.h"
 #include "bsoncxx/document/view.hpp"
 #include "bloom_filter.h"
@@ -54,6 +55,39 @@ public:
     //simulation parameter
     int64_t t, id, size, usize, next_seq;
     int same_chunk;
+
+    struct Stats {
+        //measure every segment
+        int64_t byte_req = 0, byte_miss = 0, obj_req = 0, obj_miss = 0;
+        //rt: real_time
+        int64_t rt_byte_req = 0, rt_byte_miss = 0, rt_obj_req = 0, rt_obj_miss = 0;
+        //global statistics
+        std::vector<int64_t> seg_byte_req, seg_byte_miss, seg_object_req, seg_object_miss;
+        std::vector<int64_t> seg_rss;
+        std::vector<int64_t> seg_byte_in_cache;
+        //rt: real_time
+        std::vector<int64_t> rt_seg_byte_req, rt_seg_byte_miss, rt_seg_object_req, rt_seg_object_miss;
+        std::vector<int64_t> rt_seg_rss;
+
+        void update_real_time_stats(const size_t &metadata_overhead) {
+            rt_seg_byte_miss.emplace_back(rt_byte_miss);
+            rt_seg_byte_req.emplace_back(rt_byte_req);
+            rt_seg_object_miss.emplace_back(rt_obj_miss);
+            rt_seg_object_req.emplace_back(rt_obj_req);
+            rt_byte_miss = rt_obj_miss = rt_byte_req = rt_obj_req = 0;
+            rt_seg_rss.emplace_back(metadata_overhead);
+        }
+
+        void update_stats(const size_t &metadata_overhead) {
+            seg_byte_miss.emplace_back(byte_miss);
+            seg_byte_req.emplace_back(byte_req);
+            seg_object_miss.emplace_back(obj_miss);
+            seg_object_req.emplace_back(obj_req);
+            byte_miss = obj_miss = byte_req = obj_req = 0;
+            seg_rss.emplace_back(metadata_overhead);
+        }
+    };
+
     //measure every segment
     int64_t byte_req = 0, byte_miss = 0, obj_req = 0, obj_miss = 0;
     //rt: real_time
@@ -67,6 +101,8 @@ public:
     std::vector<int64_t> rt_seg_rss;
     uint64_t time_window_end;
     std::vector<uint16_t> extra_features;
+    // Stats by first extra feature
+    std::map<int64_t, Stats> stats_by_extra_feature;
     //use relative seq starting from 0
     uint64_t seq = 0;
     std::chrono::system_clock::time_point t_now;
@@ -87,6 +123,13 @@ public:
     void update_real_time_stats();
 
     void update_stats();
+
+private:
+    void update_metrics_req(const int64_t &size);
+    void update_metrics_req(const int64_t &size, std::vector<uint16_t> &extra_features);
+
+    void update_metrics_miss(const int64_t &size);
+    void update_metrics_miss(const int64_t &size, std::vector<uint16_t> &extra_features);
 };
 
 

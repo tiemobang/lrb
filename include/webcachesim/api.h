@@ -7,9 +7,10 @@
 
 #include <memory>
 #include <map>
+#include <string>
 
 namespace webcachesim {
-    const uint max_n_extra_feature = 4;
+    const int max_n_extra_feature = 4;
     static const std::string mime_field = "X-extra-fields: ";
 
     class ParallelCache;

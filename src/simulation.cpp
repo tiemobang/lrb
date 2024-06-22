@@ -117,6 +117,11 @@ void FrameWork::update_real_time_stats() {
     auto metadata_overhead = get_rss();
     rt_seg_rss.emplace_back(metadata_overhead);
     time_window_end += real_time_segment_window;
+
+    // track seg stats by extra feature
+    for (auto &stats_pair : stats_by_extra_feature) {
+        stats_pair.second.update_real_time_stats(metadata_overhead);
+    }
 }
 
 void FrameWork::update_stats() {
@@ -126,6 +131,8 @@ void FrameWork::update_stats() {
          << " (" << ((double) webcache->_currentSize) / webcache->_cacheSize << ")" << endl
          << "delta t: " << chrono::duration_cast<std::chrono::milliseconds>(_t_now - t_now).count() / 1000.
          << endl;
+    // TODO: Print per extra feature stats?
+
     t_now = _t_now;
     cerr << "segment bmr: " << double(byte_miss) / byte_req << endl;
     seg_byte_miss.emplace_back(byte_miss);
@@ -137,6 +144,12 @@ void FrameWork::update_stats() {
     //reduce cache size by metadata
     auto metadata_overhead = get_rss();
     seg_rss.emplace_back(metadata_overhead);
+
+    // track seg stats by extra feature
+    for (auto &stats_pair : stats_by_extra_feature) {
+        stats_pair.second.update_stats(metadata_overhead);
+    }
+
     if (is_metadata_in_cache_size) {
         webcache->setSize(_cache_size - metadata_overhead);
     }
@@ -144,6 +157,47 @@ void FrameWork::update_stats() {
     webcache->update_stat_periodic();
 }
 
+void FrameWork::update_metrics_req(const int64_t &size) {
+    byte_req += size;
+    rt_byte_req += size;
+    ++obj_req;
+    ++rt_obj_req;
+}
+
+void FrameWork::update_metrics_req(const int64_t &size, std::vector<uint16_t> &extra_features) {
+    if (extra_features.size() > 0) {
+        auto stats_pair = stats_by_extra_feature.emplace(extra_features[0], Stats());
+        auto &stats = stats_pair.first->second;
+
+        stats.byte_req += size;
+        stats.obj_req += 1;
+        stats.rt_byte_req += size;
+        stats.rt_obj_req += 1;
+    }
+
+    this->update_metrics_req(size);
+}
+
+void FrameWork::update_metrics_miss(const int64_t &size) {
+    byte_miss += size;
+    rt_byte_miss += size;
+    ++obj_miss;
+    ++rt_obj_miss;
+}
+
+void FrameWork::update_metrics_miss(const int64_t &size, std::vector<uint16_t> &extra_features) {
+    if (extra_features.size() > 0) {
+        auto stats_pair = stats_by_extra_feature.emplace(extra_features[0], Stats());
+        auto &stats = stats_pair.first->second;
+        
+        stats.byte_miss += size;
+        stats.obj_miss += 1;
+        stats.rt_byte_miss += size;
+        stats.rt_obj_miss += 1;
+    }
+
+    this->update_metrics_miss(size);
+}
 
 bsoncxx::builder::basic::document FrameWork::simulate() {
     cerr << "simulating" << endl;
@@ -189,8 +243,9 @@ bsoncxx::builder::basic::document FrameWork::simulate() {
             update_stats();
         }
 
-        update_metric_req(byte_req, obj_req, size);
-        update_metric_req(rt_byte_req, rt_obj_req, size)
+        /* update_metric_req(byte_req, obj_req, size);
+        update_metric_req(rt_byte_req, rt_obj_req, size) */
+        update_metrics_req(size);
 
         if (is_offline)
             dynamic_cast<AnnotatedRequest *>(req)->reinit(seq, id, size, next_seq, &extra_features);
@@ -208,13 +263,15 @@ bsoncxx::builder::basic::document FrameWork::simulate() {
         if (is_admitting) {
             bool is_hit = webcache->lookup(*req);
             if (!is_hit) {
-                update_metric_req(byte_miss, obj_miss, size);
-                update_metric_req(rt_byte_miss, rt_obj_miss, size)
+                /* update_metric_req(byte_miss, obj_miss, size);
+                update_metric_req(rt_byte_miss, rt_obj_miss, size) */
+                update_metrics_miss(size);
                 webcache->admit(*req);
             }
         } else {
-            update_metric_req(byte_miss, obj_miss, size);
-            update_metric_req(rt_byte_miss, rt_obj_miss, size)
+            /* update_metric_req(byte_miss, obj_miss, size);
+            update_metric_req(rt_byte_miss, rt_obj_miss, size) */
+            update_metrics_miss(size);
         }
 
         ++seq;
@@ -283,6 +340,14 @@ bsoncxx::builder::basic::document FrameWork::simulation_results() {
     value_builder.append(kvp("real_time_segment_rss", [this](sub_array child) {
         for (const auto &element : rt_seg_rss)
             child.append(element);
+    }));
+
+    // Output stats by extra feature
+    value_builder.append(kvp("stats_by_extra_feature", [this](sub_array child) {
+        for (const auto &stats_pair : stats_by_extra_feature) {
+            auto &stats = stats_pair.second;
+            child.append(stats.to_bson());
+        }
     }));
 
     webcache->update_stat(value_builder);
