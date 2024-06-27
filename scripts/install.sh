@@ -1,4 +1,9 @@
 #!/bin/bash
+
+export CC="gcc" CXX="g++"
+
+git submodule update --init --recursive
+
 set -e
 # assume current path is under webcachesim
 sudo apt-get update
@@ -13,34 +18,34 @@ cd ./lib
 # install LightGBM
 cd ./LightGBM/build
 cmake -DCMAKE_BUILD_TYPE=Release ..
-make
-sudo make install
+make -j
+sudo make -j install
 cd ../..
 # dependency for mongo c driver
 sudo apt-get install -y cmake libssl-dev libsasl2-dev
 # installing mongo c
 cd ./mongo-c-driver/cmake-build
 cmake -DENABLE_AUTOMATIC_INIT_AND_CLEANUP=OFF ..
-make
-sudo make install
+make -j
+sudo make -j install
 cd ../..
 # installing mongo-cxx
 cd ./mongo-cxx-driver/build
 cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local ..
-sudo make EP_mnmlstc_core
-make
-sudo make install
+sudo make -j EP_mnmlstc_core
+make -j
+sudo make -j install
 cd ../..
 # installing libbf
 cd ./libbf/build
 cmake -DCMAKE_BUILD_TYPE=Release ..
-make
-sudo make install
+make -j
+sudo make -j install
 cd ../..
 cd ..
 # building webcachesim, install the library with api
 cd ./build
 cmake -DCMAKE_BUILD_TYPE=Release ..
-make
+make -j
 sudo ldconfig
 cd ../
