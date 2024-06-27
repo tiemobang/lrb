@@ -9,6 +9,7 @@
 #include <unordered_set>
 #include <cstdlib>
 #include <iostream>
+#include <vector>
 #include "bsoncxx/builder/basic/document.hpp"
 #include "bsoncxx/json.hpp"
 #include "mongocxx/client.hpp"
@@ -18,6 +19,7 @@
 using namespace std;
 using namespace chrono;
 using bsoncxx::builder::basic::kvp;
+using bsoncxx::builder::basic::sub_array;
 
 string current_timestamp() {
     time_t now = system_clock::to_time_t(std::chrono::system_clock::now());
@@ -48,10 +50,10 @@ int main(int argc, char *argv[]) {
     for(int i=4; i<argc; i++) {
         regex_match (argv[i],opmatch,opexp);
         if(opmatch.size()!=3) {
-            cerr << "each cacheParam needs to be in form --name=value" << endl;
-            return 1;
+            continue;
+        } else {
+            params[opmatch[1]] = opmatch[2];
         }
-        params[opmatch[1]] = opmatch[2];
     }
 
 
@@ -65,9 +67,6 @@ int main(int argc, char *argv[]) {
 
     bsoncxx::builder::basic::document key_builder{};
     bsoncxx::builder::basic::document value_builder{};
-    key_builder.append(kvp("trace_file", argv[1]));
-    key_builder.append(kvp("cache_type", argv[2]));
-    key_builder.append(kvp("cache_size", argv[3]));
 
     for (auto &k: params) {
         //don't store authentication information
@@ -80,14 +79,38 @@ int main(int argc, char *argv[]) {
             value_builder.append(kvp(k.first, k.second));
         }
     }
-    for (bsoncxx::document::element ele: key_builder.view())
-        value_builder.append(kvp(ele.key(), ele.get_value()));
-
 
     mongocxx::instance inst;
 
+    auto cacheType = argv[1];
+    auto cacheSize = std::stoull(argv[2]);
+    std::vector<string> traceFiles;
+    for(int i = 3; i < argc; ++i) {
+        if (string(argv[i]).find_first_of("=") == std::string::npos) {
+            traceFiles.emplace_back(string(webcachesim_trace_dir) + '/' + argv[i]);
+        }
+    }
+
+    key_builder.append(kvp("trace_file", [&traceFiles](sub_array child) {
+            std::vector<string> sortedTraceFiles = traceFiles;
+            std::sort(sortedTraceFiles.begin(), sortedTraceFiles.end());
+            for(const auto& element: traceFiles)
+                child.append(element);
+    }));
+    key_builder.append(kvp("cache_type", argv[1]));
+    key_builder.append(kvp("cache_size", argv[2]));
+
+    if (traceFiles.empty()) {
+        cerr << "error: no trace file found" << endl;
+        return 1;
+    }
+
+    for (bsoncxx::document::element ele: key_builder.view())
+        value_builder.append(kvp(ele.key(), ele.get_value()));
+
     auto timeBegin = chrono::system_clock::now();
-    auto res = simulation(string(webcachesim_trace_dir) + '/' + argv[1], argv[2], std::stoull(argv[3]),
+    
+    auto res = simulation(traceFiles, cacheType, cacheSize,
                           params);
     auto simulation_time = chrono::duration_cast<chrono::seconds>(chrono::system_clock::now() - timeBegin).count();
     auto simulation_timestamp = current_timestamp();

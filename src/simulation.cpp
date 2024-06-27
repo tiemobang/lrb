@@ -21,9 +21,9 @@ using bsoncxx::builder::basic::kvp;
 using bsoncxx::builder::basic::sub_array;
 
 
-FrameWork::FrameWork(const string &trace_file, const string &cache_type, const uint64_t &cache_size,
+FrameWork::FrameWork(const vector<string> &trace_files, const string &cache_type, const uint64_t &cache_size,
                      map<string, string> &params) {
-    _trace_file = trace_file;
+    _trace_files = trace_files;
     _cache_type = cache_type;
     _cache_size = cache_size;
     is_offline = offline_algorithms.count(_cache_type);
@@ -69,18 +69,28 @@ FrameWork::FrameWork(const string &trace_file, const string &cache_type, const u
 #endif
 
     //trace_file related init
-    if (is_offline) {
-        annotate(_trace_file, n_extra_fields);
+    if (_trace_files.empty()) {
+        throw runtime_error("Error: Expecting at least one trace file.");
+    }
+    for(auto&& _trace_file: _trace_files) {
+        if (is_offline) {
+            annotate(_trace_file, n_extra_fields);
+            _trace_file = _trace_file + ".ant";
+        }
+
+        std::ifstream infile;
+        infile.open(_trace_file);
+        if (!infile) {
+            cerr << "Exception opening/reading file " << _trace_file << endl;
+            exit(-1);
+        }
+        auto&& in = infiles.emplace_back(std::move(infile));
+        if (!in) {
+            cerr << "Exception opening/reading file " << _trace_file << endl;
+            throw runtime_error("Exception opening/reading file " + _trace_file);
+        }
     }
 
-    if (is_offline) {
-        _trace_file = _trace_file + ".ant";
-    }
-    infile.open(_trace_file);
-    if (!infile) {
-        cerr << "Exception opening/reading file " << _trace_file << endl;
-        exit(-1);
-    }
 
     //set cache_type related
     // create cache
@@ -95,15 +105,17 @@ FrameWork::FrameWork(const string &trace_file, const string &cache_type, const u
 
 void FrameWork::adjust_real_time_offset() {
     // Zhenyu: not assume t start from any constant, so need to compute the first window
-    if (is_offline) {
-        infile >> next_seq >> t;
-    } else {
-        infile >> t;
+    for(auto&& infile: infiles) {
+        if (is_offline) {
+                infile >> next_seq >> t;
+        } else {
+            infile >> t;
+        }
+        time_window_end =
+                real_time_segment_window * (t / real_time_segment_window + (t % real_time_segment_window != 0));
+        infile.clear();
+        infile.seekg(0, ios::beg);
     }
-    time_window_end =
-            real_time_segment_window * (t / real_time_segment_window + (t % real_time_segment_window != 0));
-    infile.clear();
-    infile.seekg(0, ios::beg);
 }
 
 
@@ -164,7 +176,7 @@ void FrameWork::update_metrics_req(const int64_t &size) {
     ++rt_obj_req;
 }
 
-void FrameWork::update_metrics_req(const int64_t &size, std::vector<uint16_t> &extra_features) {
+void FrameWork::update_metrics_req(const int64_t &size, const std::vector<uint16_t> &extra_features) {
     if (extra_features.size() > 0) {
         auto stats_pair = stats_by_extra_feature.emplace(extra_features[0], Stats());
         auto &stats = stats_pair.first->second;
@@ -185,7 +197,7 @@ void FrameWork::update_metrics_miss(const int64_t &size) {
     ++rt_obj_miss;
 }
 
-void FrameWork::update_metrics_miss(const int64_t &size, std::vector<uint16_t> &extra_features) {
+void FrameWork::update_metrics_miss(const int64_t &size, const std::vector<uint16_t> &extra_features) {
     if (extra_features.size() > 0) {
         auto stats_pair = stats_by_extra_feature.emplace(extra_features[0], Stats());
         auto &stats = stats_pair.first->second;
@@ -217,24 +229,17 @@ bsoncxx::builder::basic::document FrameWork::simulate() {
 
     int64_t seq_start_counter = 0;
     while (true) {
-        if (is_offline) {
-            if (!(infile >> next_seq >> t >> id >> size))
-                break;
-        } else {
-            if (!(infile >> t >> id >> size))
-                break;
-        }
-
         if (seq_start_counter++ < seq_start) {
             continue;
         }
         if (seq == n_early_stop)
             break;
 
-        for (int i = 0; i < n_extra_fields; ++i)
-            infile >> extra_features[i];
-        if (uni_size)
-            size = 1;
+        bool ok = read_trace(next_seq, t, id , size);
+
+        if (!ok) {
+            break;
+        }
 
         while (t >= time_window_end) {
             update_real_time_stats();
@@ -245,7 +250,7 @@ bsoncxx::builder::basic::document FrameWork::simulate() {
 
         /* update_metric_req(byte_req, obj_req, size);
         update_metric_req(rt_byte_req, rt_obj_req, size) */
-        update_metrics_req(size);
+        update_metrics_req(size, extra_features);
 
         if (is_offline)
             dynamic_cast<AnnotatedRequest *>(req)->reinit(seq, id, size, next_seq, &extra_features);
@@ -265,13 +270,13 @@ bsoncxx::builder::basic::document FrameWork::simulate() {
             if (!is_hit) {
                 /* update_metric_req(byte_miss, obj_miss, size);
                 update_metric_req(rt_byte_miss, rt_obj_miss, size) */
-                update_metrics_miss(size);
+                update_metrics_miss(size, extra_features);
                 webcache->admit(*req);
             }
         } else {
             /* update_metric_req(byte_miss, obj_miss, size);
             update_metric_req(rt_byte_miss, rt_obj_miss, size) */
-            update_metrics_miss(size);
+            update_metrics_miss(size, extra_features);
         }
 
         ++seq;
@@ -280,7 +285,9 @@ bsoncxx::builder::basic::document FrameWork::simulate() {
     //for the residue segment of trace
     update_real_time_stats();
     update_stats();
-    infile.close();
+    for(auto&& infile: infiles) {
+        infile.close();
+    }
 
     return simulation_results();
 }
@@ -342,11 +349,55 @@ bsoncxx::builder::basic::document FrameWork::simulation_results() {
             child.append(element);
     }));
 
-    // Output stats by extra feature
+    // Output stats by extra feature where
     value_builder.append(kvp("stats_by_extra_feature", [this](sub_array child) {
         for (const auto &stats_pair : stats_by_extra_feature) {
+            
+            auto &extra_feature = stats_pair.first;
             auto &stats = stats_pair.second;
-            child.append(stats.to_bson());
+
+            // Create stats with key as extra feature
+            bsoncxx::builder::basic::document stats_builder{};
+            stats_builder.append(kvp("feature", extra_feature));
+            stats_builder.append(kvp("segment_byte_miss", [stats](sub_array child) {
+                for (const auto &element : stats.seg_byte_miss)
+                    child.append(element);
+            }));
+            stats_builder.append(kvp("segment_byte_req", [stats](sub_array child) {
+                for (const auto &element : stats.seg_byte_req)
+                    child.append(element);
+            }));
+            stats_builder.append(kvp("segment_byte_in_cache", [stats](sub_array child) {
+                for (const auto &element : stats.seg_byte_in_cache)
+                    child.append(element);
+            }));
+            stats_builder.append(kvp("segment_object_miss", [stats](sub_array child) {
+                for (const auto &element : stats.seg_object_miss)
+                    child.append(element);
+            }));
+            stats_builder.append(kvp("segment_object_req", [stats](sub_array child) {
+                for (const auto &element : stats.seg_object_req)
+                    child.append(element);
+            }));
+
+            stats_builder.append(kvp("rt_segment_byte_miss", [stats](sub_array child) {
+                for (const auto &element : stats.rt_seg_byte_miss)
+                    child.append(element);
+            }));
+            stats_builder.append(kvp("rt_segment_byte_req", [stats](sub_array child) {
+                for (const auto &element : stats.rt_seg_byte_req)
+                    child.append(element);
+            }));
+            stats_builder.append(kvp("rt_segment_object_miss", [stats](sub_array child) {
+                for (const auto &element : stats.rt_seg_object_miss)
+                    child.append(element);
+            }));
+            stats_builder.append(kvp("rt_segment_object_req", [stats](sub_array child) {
+                for (const auto &element : stats.rt_seg_object_req)
+                    child.append(element);
+            }));
+
+            child.append(stats_builder);
         }
     }));
 
@@ -354,18 +405,112 @@ bsoncxx::builder::basic::document FrameWork::simulation_results() {
     return value_builder;
 }
 
+bool FrameWork::read_trace(int64_t &next_seq, int64_t &t, int64_t &id, int64_t &size) {
 
+    files_choosable.clear();
+    files_suitable_time.clear();
+    temp_input.clear();
 
-bsoncxx::builder::basic::document _simulation(string trace_file, string cache_type, uint64_t cache_size,
+    // Remove unreadable input files
+    std::vector<std::ifstream> infiles_temp;
+    int file_i = 0;
+    for(auto&& infile: infiles) {
+        if(infile) {
+            infiles_temp.emplace_back(std::move(infile));
+        }
+        else {
+            //cout << "Dropping unreadable input file: " << file_i << endl;
+        }
+        ++file_i;
+    }
+    infiles.swap(infiles_temp);
+    infiles_temp.clear();
+
+    // Get time of each input file, track minimal time for later
+    size_t i = 0;
+    int64_t t_min = std::numeric_limits<int64_t>::max();
+    for(auto&& infile: infiles) {
+        int64_t t = std::numeric_limits<int64_t>::max();
+        int64_t next_seq = -1;
+
+        // Record starting position
+        auto pos = infile.tellg();
+
+        if(infile) {
+            files_choosable.push_back(i++);
+            if (is_offline) {
+                infile >> next_seq;
+            }
+
+            infile >> t;
+        }
+
+        if (t < t_min) {
+            t_min = t;
+        }
+
+        temp_input.emplace_back(TempInput{next_seq, t, pos});
+    }
+
+    // Prune choosable files to those with minimal time
+    for(const auto& i: files_choosable) {
+        if (temp_input[i].time == t_min) {
+            files_suitable_time.push_back(i);
+        }
+    }
+
+    if (files_suitable_time.empty()) {
+        return false;
+    }
+
+    // Pick input file
+    std::uniform_int_distribution<size_t> dist(0, files_suitable_time.size()-1);
+    size_t choice_index = dist(gen);
+    size_t choice = files_suitable_time[choice_index];
+
+    for(size_t i = 0; i < infiles.size(); ++i) {
+
+        auto&& infile = infiles[i];
+
+        if (i == choice) {
+            next_seq = temp_input[i].seq;
+            t = temp_input[i].time;
+
+            // Read id and size from chosen file
+            if (!(infile >> id >> size)) {
+                cerr << "Choice: " << choice << " from";
+                for (const auto& f: files_suitable_time) {
+                    cerr << " " << f;
+                }
+                cerr << endl;
+                return false;
+            }
+            
+            for (int i = 0; i < n_extra_fields; ++i)
+                infile >> extra_features[i];
+
+        } else {
+            // Seek back other files
+            infile.seekg(temp_input[i].pos);
+        }
+    }
+
+    if (uni_size)
+        size = 1;
+
+    return true;
+}
+
+bsoncxx::builder::basic::document _simulation(std::vector<string> trace_files, string cache_type, uint64_t cache_size,
                                               map<string, string> params) {
-    FrameWork frame_work(trace_file, cache_type, cache_size, params);
+    FrameWork frame_work(trace_files, cache_type, cache_size, params);
     auto res = frame_work.simulate();
     return res;
 }
 
-bsoncxx::builder::basic::document simulation(string trace_file, string cache_type,
+bsoncxx::builder::basic::document simulation(std::vector<string> trace_files, string cache_type,
                                              uint64_t cache_size, map<string, string> params) {
-    int n_extra_fields = get_n_fields(trace_file) - 3;
+    int n_extra_fields = get_n_fields(trace_files) - 3;
     params["n_extra_fields"] = to_string(n_extra_fields);
 
     bool enable_trace_format_check = true;
@@ -374,7 +519,7 @@ bsoncxx::builder::basic::document simulation(string trace_file, string cache_typ
     }
 
     if (true == enable_trace_format_check) {
-        auto if_pass = trace_sanity_check(trace_file, params);
+        auto if_pass = trace_sanity_check(trace_files, params);
         if (true == if_pass) {
             cerr << "pass sanity check" << endl;
         } else {
@@ -382,8 +527,13 @@ bsoncxx::builder::basic::document simulation(string trace_file, string cache_typ
         }
     }
 
-    if (cache_type == "Adaptive-TinyLFU")
-        return _simulation_tinylfu(trace_file, cache_type, cache_size, params);
+    if (cache_type == "Adaptive-TinyLFU") {
+        if (trace_files.size() == 1 ) {
+            return _simulation_tinylfu(trace_files[0], cache_type, cache_size, params);
+        } else {
+            throw std::runtime_error("Adaptive-TinyLFU not ported to multiple traces!");
+        }
+    }
     else
-        return _simulation(trace_file, cache_type, cache_size, params);
+        return _simulation(trace_files, cache_type, cache_size, params);
 }

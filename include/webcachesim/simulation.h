@@ -12,6 +12,7 @@
 #include <bsoncxx/builder/basic/document.hpp>
 #include <unordered_set>
 #include <map>
+#include <random>
 #include "cache.h"
 #include "bsoncxx/document/view.hpp"
 #include "bloom_filter.h"
@@ -20,7 +21,7 @@
 /*
  * single thread simulation. Returns results.
  */
-bsoncxx::builder::basic::document simulation(std::string trace_file, std::string cache_type,
+bsoncxx::builder::basic::document simulation(const vector<string> trace_files, std::string cache_type,
                                              uint64_t cache_size, std::map<std::string, std::string> params);
 
 using namespace webcachesim;
@@ -34,11 +35,9 @@ public:
     uint n_extra_fields = 0;
     bool is_metadata_in_cache_size = false;
     unique_ptr<Cache> webcache = nullptr;
-    std::ifstream infile;
     int64_t n_early_stop = -1;  //-1: no stop
     int64_t seq_start = 0;
 
-    std::string _trace_file;
     std::string _cache_type;
     uint64_t _cache_size;
     const unordered_set<string> offline_algorithms = {"Belady", "BeladySample", "RelaxedBelady", "BinaryRelaxedBelady",
@@ -111,7 +110,7 @@ public:
 //    int64_t byte_miss_filter = 0;
 
 
-    FrameWork(const std::string &trace_file, const std::string &cache_type, const uint64_t &cache_size,
+    FrameWork(const vector<string> &trace_files, const std::string &cache_type, const uint64_t &cache_size,
               std::map<std::string, std::string> &params);
 
     bsoncxx::builder::basic::document simulate();
@@ -125,11 +124,27 @@ public:
     void update_stats();
 
 private:
+    // State for reading input files
+    std::vector<std::ifstream> infiles;
+    std::vector<std::string> _trace_files;
+    std::vector<size_t> files_choosable;
+    std::vector<size_t> files_suitable_time;
+    struct TempInput {
+        int64_t seq;
+        int64_t time;
+        std::streampos pos;
+    };
+    std::vector<TempInput> temp_input;
+    // TODO: Set more sophisticated random generator
+    std::default_random_engine gen;
+
     void update_metrics_req(const int64_t &size);
-    void update_metrics_req(const int64_t &size, std::vector<uint16_t> &extra_features);
+    void update_metrics_req(const int64_t &size, const std::vector<uint16_t> &extra_features);
 
     void update_metrics_miss(const int64_t &size);
-    void update_metrics_miss(const int64_t &size, std::vector<uint16_t> &extra_features);
+    void update_metrics_miss(const int64_t &size, const std::vector<uint16_t> &extra_features);
+
+    bool read_trace(int64_t &next_seq, int64_t &t, int64_t &id, int64_t &size);
 };
 
 

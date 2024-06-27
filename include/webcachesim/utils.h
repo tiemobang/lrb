@@ -7,6 +7,9 @@
 
 #include <fstream>
 #include <sstream>
+#include <limits>
+#include <vector>
+#include <string>
 
 // hash_combine derived from boost/functional/hash/hash.hpp:212
 // Copyright 2005-2014 Daniel James.
@@ -33,22 +36,30 @@ namespace std {
 }
 
 
-inline int get_n_fields(const std::string& filename) {
-    std::ifstream infile(filename);
-    if (!infile) {
-        throw std::runtime_error("Exception opening file "+filename);
+inline int get_n_fields(const std::vector<std::string>& filenames) {
+    int prev_counter = std::numeric_limits<int>::max();
+    for (const auto& filename: filenames) {
+        std::ifstream infile(filename);
+        if (!infile) {
+            throw std::runtime_error("Exception opening file "+filename);
+        }
+        //get whether file is in a correct format
+        std::string line;
+        getline(infile, line);
+        std::istringstream iss(line);
+        uint64_t tmp;
+        int counter = 0;
+        while (iss >> tmp) {
+            ++counter;
+        }
+        infile.close();
+
+        if (prev_counter != std::numeric_limits<int>::max() && prev_counter != counter) {
+            throw std::runtime_error("Found unequal number of fields!");
+        }
+        prev_counter = counter;
     }
-    //get whether file is in a correct format
-    std::string line;
-    getline(infile, line);
-    std::istringstream iss(line);
-    uint64_t tmp;
-    int counter = 0;
-    while (iss >> tmp) {
-        ++counter;
-    }
-    infile.close();
-    return counter;
+    return prev_counter;
 }
 
 #define update_metric_req(byte_metric, object_metric, size) \
