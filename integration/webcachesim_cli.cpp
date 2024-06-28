@@ -15,6 +15,7 @@
 #include "mongocxx/client.hpp"
 #include "mongocxx/instance.hpp"
 #include "mongocxx/uri.hpp"
+#include "cache.h"
 
 using namespace std;
 using namespace chrono;
@@ -34,6 +35,11 @@ int main(int argc, char *argv[]) {
         cerr
                 << "webcachesim_cli traceFile cacheType cacheSize [--param=value]"
                 << endl;
+        cerr << "Available cache types:\n";
+        for (const auto& e : Cache::get_factory_instance()) {
+            cerr << e.first << " ";
+        }
+        cerr << endl;
         return 1;
     }
 
@@ -47,7 +53,7 @@ int main(int argc, char *argv[]) {
     // parse cache parameters
     regex opexp ("--([^=]*)=(.*)");
     cmatch opmatch;
-    for(int i=4; i<argc; i++) {
+    for(int i=0; i<argc; i++) {
         regex_match (argv[i],opmatch,opexp);
         if(opmatch.size()!=3) {
             continue;
