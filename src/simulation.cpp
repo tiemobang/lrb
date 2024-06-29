@@ -138,15 +138,21 @@ void FrameWork::update_real_time_stats() {
 
 void FrameWork::update_stats() {
     auto _t_now = chrono::system_clock::now();
+#ifndef NDEBUG
     cerr << "\nseq: " << seq << endl
          << "cache size: " << webcache->_currentSize << "/" << webcache->_cacheSize
          << " (" << ((double) webcache->_currentSize) / webcache->_cacheSize << ")" << endl
          << "delta t: " << chrono::duration_cast<std::chrono::milliseconds>(_t_now - t_now).count() / 1000.
          << endl;
+#else
+    cerr << "seq:" << seq << "\n";
+#endif
     // TODO: Print per extra feature stats?
 
     t_now = _t_now;
+#ifndef NDEBUG
     cerr << "segment bmr: " << double(byte_miss) / byte_req << endl;
+#endif
     seg_byte_miss.emplace_back(byte_miss);
     seg_byte_req.emplace_back(byte_req);
     seg_object_miss.emplace_back(obj_miss);
@@ -165,7 +171,9 @@ void FrameWork::update_stats() {
     if (is_metadata_in_cache_size) {
         webcache->setSize(_cache_size - metadata_overhead);
     }
+#ifndef NDEBUG
     cerr << "rss: " << metadata_overhead << endl;
+#endif
     webcache->update_stat_periodic();
 }
 
